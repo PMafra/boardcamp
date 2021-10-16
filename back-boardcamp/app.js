@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import Joi from "joi";
 import pg from "pg";
+import dayjs from "dayjs";
 
 const app = express();
 app.use(cors());
@@ -244,38 +245,106 @@ app.put('/customers/:id', async (req, res) => {
 app.get('/rentals', async (req, res) => {
 
     try {
-        const customer = await connection.query(`
-            SELECT * FROM customers
-            WHERE id = ${req.params.id}
-            ;
+        const rentals = await connection.query(`
+            SELECT rentals.*,
+                customers.id AS "customerId",
+                customers.name AS "customerName",
+                games.id AS "gameId",
+                games.name AS "gameName",
+                games."categoryId",
+                categories.name AS "categoryName"
+            FROM rentals
+            JOIN customers
+                ON rentals."customerId" = customers.id
+            JOIN games
+                ON rentals."gameId" = games.id
+            JOIN categories
+                ON games."categoryId" = categories.id
+        ;
         `);
-        if (customer.rows.length === 0) {
+        console.log(rentals.rows)
+
+        const newRentals = [];
+        rentals.rows.map(rental => 
+            newRentals.push({
+                id: rental.id,
+                customerId: rental.customerId,
+                gameId: rental.gameId,
+                rentDate: dayjs(rental.rentDate).format('YYYY/MM/DD').replace(/\//g,'-'),
+                daysRented: rental. daysRented,
+                returnDate: rental.returnDate,
+                originalPrice: rental.originalPrice,
+                delayFee: rental.delayFee,
+                customer: {
+                    id: rental.customerId,
+                    name: rental.customerName
+                },
+                game: {
+                    id: rental.gameId,
+                    name: rental.gameName,
+                    categoryId: rental.categoryId,
+                    categoryName: rental.categoryName
+                }
+            })    
+        );
+
+        if (rentals.rows.length === 0) {
           return res.sendStatus(404);
         }
-        res.send(customer.rows);
+
+        res.send(newRentals);
     } catch (err) {
         console.error(err);
         res.sendStatus(500);
     }
 });
 
-// app.get('/categories', (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         // buscando o produto
-//         const product = await connection.query(
-//           `SELECT products.*, categories.name AS "categoryName" FROM products JOIN categories ON products."categoryId" = categories.id WHERE products.id = $1;`
-//           , [id]);
-    
-//         if (!product.rows[0]) {
-//           return res.sendStatus(404);
-//         }
-    
-//         res.send(product.rows[0]);
-//       } catch (err) {
-//         console.error(err);
-//         res.sendStatus(500);
-//       }
-// });
+app.post('/rentals', async (req, res) => {
+
+    try {
+
+        const {
+            customerId,
+            gameId,
+            daysRented
+        } = req.body;
+
+        if (daysRented <= 0) {
+            return res.sendStatus(400);
+        }
+
+        const pricePerDay = await connection.query(`
+            SELECT games."pricePerDay"
+            FROM games
+            WHERE games.id = ${gameId};
+        `)
+
+        const rentDate = dayjs().format('YYYY/MM/DD').replace(/\//g,'-');
+
+        await connection.query(`
+            INSERT INTO rentals (
+                "customerId", 
+                "gameId", 
+                "rentDate", 
+                "daysRented",
+                "returnDate",
+                "originalPrice",
+                "delayFee"
+            ) VALUES (
+                ${customerId},
+                ${gameId},
+                '${rentDate}',
+                ${daysRented},
+                ${null},
+                ${daysRented * pricePerDay.rows[0].pricePerDay},
+                ${null}
+            );
+        `);
+
+        res.sendStatus(201);
+    } catch (err) {
+        res.sendStatus(500);
+    }
+});
 
 app.listen(APP_PORT);
