@@ -247,9 +247,9 @@ app.get('/rentals', async (req, res) => {
     try {
         const rentals = await connection.query(`
             SELECT rentals.*,
-                customers.id AS "customerId",
+                customers.id AS "idCustomer",
                 customers.name AS "customerName",
-                games.id AS "gameId",
+                games.id AS "idGame",
                 games.name AS "gameName",
                 games."categoryId",
                 categories.name AS "categoryName"
@@ -262,7 +262,6 @@ app.get('/rentals', async (req, res) => {
                 ON games."categoryId" = categories.id
         ;
         `);
-        console.log(rentals.rows)
 
         const newRentals = [];
         rentals.rows.map(rental => 
@@ -276,11 +275,11 @@ app.get('/rentals', async (req, res) => {
                 originalPrice: rental.originalPrice,
                 delayFee: rental.delayFee,
                 customer: {
-                    id: rental.customerId,
+                    id: rental.idCustomer,
                     name: rental.customerName
                 },
                 game: {
-                    id: rental.gameId,
+                    id: rental.idGame,
                     name: rental.gameName,
                     categoryId: rental.categoryId,
                     categoryName: rental.categoryName
@@ -319,8 +318,6 @@ app.post('/rentals', async (req, res) => {
             WHERE games.id = ${gameId};
         `)
 
-        const rentDate = dayjs().format('YYYY/MM/DD').replace(/\//g,'-');
-
         await connection.query(`
             INSERT INTO rentals (
                 "customerId", 
@@ -333,7 +330,7 @@ app.post('/rentals', async (req, res) => {
             ) VALUES (
                 ${customerId},
                 ${gameId},
-                '${rentDate}',
+                '${dayjs().format('YYYY/MM/DD').replace(/\//g,'-')}',
                 ${daysRented},
                 ${null},
                 ${daysRented * pricePerDay.rows[0].pricePerDay},
@@ -346,5 +343,58 @@ app.post('/rentals', async (req, res) => {
         res.sendStatus(500);
     }
 });
+
+app.post('/rentals/:id/return', async (req, res) => {
+
+    try {
+
+        const rentalsObject = await connection.query(`
+            SELECT rentals."gameId",
+                rentals."rentDate"
+            FROM rentals
+            WHERE rentals.id = ${req.params.id}
+        `)
+
+        const gameId = rentalsObject.rows[0].gameId;
+        const rentDate = dayjs(rentalsObject.rows[0].rentDate).format('YYYY/MM/DD').replace(/\//g,'-');
+
+        const pricePerDay = await connection.query(`
+            SELECT games."pricePerDay"
+            FROM games
+            WHERE games.id = ${gameId}
+        `)
+
+        const today = dayjs().format('YYYY/MM/DD').replace(/\//g,'-');
+
+        const date1 = dayjs(rentDate);
+        const date2 = dayjs(today);
+
+        await connection.query(`
+            UPDATE rentals 
+            SET returnDate = '${today}', 
+                delayFee = '${pricePerDay.rows[0].pricePerDay * (date2.diff(date1, 'day'))}', 
+            WHERE id = ${req.params.id};
+        `);
+        
+        res.sendStatus(200);
+    } catch (err) {
+        res.sendStatus(500);
+    }
+});
+
+app.delete('/rentals/:id', async (req, res) => {
+
+    try {
+        await connection.query(`
+            DELETE FROM rentals
+            WHERE id = ${req.params.id};
+        `);
+
+        res.sendStatus(200);
+    } catch (err) {
+        res.sendStatus(500);
+    }
+});
+
 
 app.listen(APP_PORT);
