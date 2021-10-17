@@ -40,6 +40,12 @@ const customerSchema = Joi.object().length(4).keys({
     birthday: Joi.date().required(),
 });
 
+const rentalSchema = Joi.object().length(3).keys({
+    customerId: Joi.number().integer().positive().required(),
+    gameId: Joi.number().integer().positive().required(),
+    daysRented: Joi.number().integer().greater(0).required(),
+});
+
 // const messageSchema = Joi.object().keys({
 //     to: Joi.string().alphanum().required(),
 //     text: Joi.string().required(),
@@ -307,9 +313,7 @@ app.get('/rentals', async (req, res) => {
     try {
         const rentals = await connection.query(`
             SELECT rentals.*,
-                customers.id AS "idCustomer",
                 customers.name AS "customerName",
-                games.id AS "idGame",
                 games.name AS "gameName",
                 games."categoryId",
                 categories.name AS "categoryName"
@@ -320,39 +324,41 @@ app.get('/rentals', async (req, res) => {
                 ON rentals."gameId" = games.id
             JOIN categories
                 ON games."categoryId" = categories.id
-        ;
+            ${req.query.customerId ? 
+                `WHERE rentals."customerId" = '${req.query.customerId}'` 
+                : ""}
+            ${req.query.gameId ? 
+                `WHERE rentals."gameId" = '${req.query.gameId}'` 
+                : ""}
+            ;
         `);
 
-        const newRentals = rentals.rows.map(rental => {
-            return {
-                id: rental.id,
-                customerId: rental.customerId,
-                gameId: rental.gameId,
-                rentDate: dayjs(rental.rentDate).format('YYYY/MM/DD').replace(/\//g,'-'),
-                daysRented: rental. daysRented,
-                returnDate: rental.returnDate,
-                originalPrice: rental.originalPrice,
-                delayFee: rental.delayFee,
-                customer: {
-                    id: rental.idCustomer,
-                    name: rental.customerName
-                },
-                game: {
-                    id: rental.idGame,
-                    name: rental.gameName,
-                    categoryId: rental.categoryId,
-                    categoryName: rental.categoryName
-                }
-            }  
+        rentals.rows.forEach(rental => {
+            rental.rentDate = dayjs(rental.rentDate).format('YYYY-MM-DD');
+            rental.customer = {
+                id: rental.customerId,
+                name: rental.customerName
+            };
+            rental.game = {
+                id: rental.gameId,
+                name: rental.gameName,
+                categoryId: rental.categoryId,
+                categoryName: rental.categoryName
+            };
+            delete rental.idCustomer, 
+            delete rental.customerName, 
+            delete rental.idGame, 
+            delete rental.gameName, 
+            delete rental.categoryId, 
+            delete rental.categoryName
         });
 
         if (rentals.rows.length === 0) {
           return res.sendStatus(404);
         }
 
-        res.send(newRentals);
+        res.send(rentals.rows);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
@@ -361,21 +367,56 @@ app.post('/rentals', async (req, res) => {
 
     try {
 
+        const isCorrectBody = rentalSchema.validate(req.body);
+        if (isCorrectBody.error) {
+            return res.status(400).send(`Bad Request: ${isCorrectBody.error.details[0].message}`);
+        }
+
         const {
             customerId,
             gameId,
             daysRented
         } = req.body;
 
-        if (daysRented <= 0) {
-            return res.sendStatus(400);
+        const isValidCustomerId = await connection.query(`
+            SELECT id
+            FROM customers
+            WHERE customers.id = '${customerId}';
+        `)
+        if (isValidCustomerId.rows.length === 0) {
+            return res.status(400).send("Invalid customer id");
         }
 
-        const pricePerDay = await connection.query(`
-            SELECT games."pricePerDay"
+        const isValidGameId = await connection.query(`
+            SELECT id
+            FROM games
+            WHERE games.id = '${gameId}';
+        `)
+        if (isValidGameId.rows.length === 0) {
+            return res.status(400).send("Invalid game id");
+        }
+
+        const chosenGame = await connection.query(`
+            SELECT games."stockTotal",
+                games."pricePerDay"
             FROM games
             WHERE games.id = ${gameId};
         `)
+
+        const pricePerDay = chosenGame.rows[0].pricePerDay;
+        const numberOfGames = chosenGame.rows[0].stockTotal;
+
+        const listOfRentals = await connection.query(`
+            SELECT id
+            FROM rentals
+            WHERE rentals."gameId" = '${gameId}';
+        `)
+
+        const numberOfRentals = listOfRentals.rows.length;
+        
+        if (numberOfRentals > numberOfGames) {
+            return res.status(400).send("This game is out of stock at the moment");
+        }
 
         await connection.query(`
             INSERT INTO rentals (
@@ -389,10 +430,10 @@ app.post('/rentals', async (req, res) => {
             ) VALUES (
                 ${customerId},
                 ${gameId},
-                '${dayjs().format('YYYY/MM/DD').replace(/\//g,'-')}',
+                '${dayjs().format('YYYY-MM-DD')}',
                 ${daysRented},
                 ${null},
-                ${daysRented * pricePerDay.rows[0].pricePerDay},
+                ${daysRented * pricePerDay},
                 ${null}
             );
         `);
