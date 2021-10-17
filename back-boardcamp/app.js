@@ -19,15 +19,34 @@ const connection = new Pool({
     database: 'boardcamp'
 });
 
-// const userNameSchema = Joi.object().keys({
-//     name: Joi.string().alphanum().min(3).max(30).required()
-// });
+const newCategorySchema = Joi.object().length(1).keys({
+    name: Joi.string().alphanum().min(1).max(30).required()
+});
+
+const newGameSchema = Joi.object().length(5).keys({
+    name: Joi.string().min(1).max(30).required(),
+    image: Joi.string().min(1).required(),
+    stockTotal: Joi.number().integer().greater(0).required(),
+    categoryId: Joi.number().integer().positive().required(),
+    pricePerDay: Joi.number().integer().greater(0).required(),
+});
+
+const stringWithOnlyNumbers = /^[0-9]+$/;
+
+const customerSchema = Joi.object().length(4).keys({
+    name: Joi.string().min(1).max(30).required(),
+    phone: Joi.string().min(10).max(11).pattern(stringWithOnlyNumbers).required(),
+    cpf: Joi.string().length(11).pattern(stringWithOnlyNumbers).required(),
+    birthday: Joi.date().required(),
+});
 
 // const messageSchema = Joi.object().keys({
 //     to: Joi.string().alphanum().required(),
 //     text: Joi.string().required(),
 //     type: Joi.valid("message").valid("private_message")
 // });
+
+//CATEGORIES
 
 app.get('/categories', async (req, res) => {
 
@@ -41,7 +60,6 @@ app.get('/categories', async (req, res) => {
         }
         res.send(categories.rows);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
@@ -49,22 +67,20 @@ app.get('/categories', async (req, res) => {
 app.post('/categories', async (req, res) => {
 
     try {
-        if (!req.body.name) {
-            res.sendStatus(400);
-            return;
+        const isCorrectBody = newCategorySchema.validate(req.body);
+        if (isCorrectBody.error) {
+            return res.status(400).send(`Bad Request: ${isCorrectBody.error.details[0].message}`);
         }
 
         const newCategory = req.body.name;
-
-        const alreadyExists = await connection.query(`
+        const isNewCategory = await connection.query(`
             SELECT name 
             FROM categories 
-            WHERE name = '${newCategory}';
+            WHERE name iLIKE '${newCategory}';
         `);
 
-        if (alreadyExists.rows.length !== 0) {
-            res.sendStatus(409);
-            return;
+        if (isNewCategory.rows.length !== 0) {
+            return res.status(409).send("This category already exists!");
         }
 
         await connection.query(`
@@ -74,10 +90,11 @@ app.post('/categories', async (req, res) => {
 
         res.sendStatus(201);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
+
+//GAMES
 
 app.get('/games', async (req, res) => {
 
@@ -90,15 +107,13 @@ app.get('/games', async (req, res) => {
                 ON games."categoryId" = categories.id
             ${req.query.name ? 
                 `WHERE games.name iLIKE '${req.query.name}%'` 
-                : ""}
-            ;
+                : ""};
         `);
         if (games.rows.length === 0) {
           return res.sendStatus(404);
         }
         res.send(games.rows);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
@@ -106,9 +121,9 @@ app.get('/games', async (req, res) => {
 app.post('/games', async (req, res) => {
 
     try {
-        if (!req.body.name || req.body.stockTotal <= 0 || req.body.pricePerDay <= 0) {
-            res.sendStatus(400);
-            return;
+        const isCorrectBody = newGameSchema.validate(req.body);
+        if (isCorrectBody.error) {
+            return res.status(400).send(`Bad Request: ${isCorrectBody.error.details[0].message}`);
         }
 
         const {
@@ -119,6 +134,24 @@ app.post('/games', async (req, res) => {
             pricePerDay
         } = req.body;
 
+        const isNewGame = await connection.query(`
+            SELECT name 
+            FROM games 
+            WHERE name iLIKE '${name}';
+        `);
+        if (isNewGame.rows.length !== 0) {
+            return res.status(409).send("This game already exists!");
+        }
+
+        const isValidCategory = await connection.query(`
+            SELECT *
+            FROM categories 
+            WHERE id = ${categoryId};
+        `);
+        if (isValidCategory.rows.length === 0) {
+            return res.status(400).send("This category id does not exist!");
+        }
+
         await connection.query(`
             INSERT INTO games (
                 name, 
@@ -127,9 +160,9 @@ app.post('/games', async (req, res) => {
                 "categoryId", 
                 "pricePerDay"
             ) VALUES (
-                '${name}'
-                ,'${image}'
-                ,${stockTotal},
+                '${name}',
+                '${image}',
+                ${stockTotal},
                 ${categoryId},
                 ${pricePerDay}
             );
@@ -137,10 +170,11 @@ app.post('/games', async (req, res) => {
 
         res.sendStatus(201);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
+
+//CUSTOMERS
 
 app.get('/customers', async (req, res) => {
 
@@ -149,15 +183,18 @@ app.get('/customers', async (req, res) => {
             SELECT * FROM customers
             ${req.query.cpf ? 
                 `WHERE customers.cpf LIKE '${req.query.cpf}%'` 
-                : ""}
-            ;
+                : ""};
         `);
         if (customers.rows.length === 0) {
           return res.sendStatus(404);
         }
+
+        customers.rows.forEach(customer =>
+            customer.birthday = dayjs(customer.birthday).format('YYYY-MM-DD')
+        )
+
         res.send(customers.rows);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
@@ -167,15 +204,16 @@ app.get('/customers/:id', async (req, res) => {
     try {
         const customer = await connection.query(`
             SELECT * FROM customers
-            WHERE id = ${req.params.id}
-            ;
+            WHERE id = '${req.params.id}';
         `);
         if (customer.rows.length === 0) {
-          return res.sendStatus(404);
+          return res.status(404).send("This customer id does not exist!");
         }
+
+        customer.rows[0].birthday = dayjs(customer.rows[0].birthday).format('YYYY-MM-DD');
+
         res.send(customer.rows);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
@@ -183,9 +221,9 @@ app.get('/customers/:id', async (req, res) => {
 app.post('/customers', async (req, res) => {
 
     try {
-        if (!req.body.name || req.body.stockTotal <= 0 || req.body.pricePerDay <= 0) {
-            res.sendStatus(400);
-            return;
+        const isCorrectBody = customerSchema.validate(req.body);
+        if (isCorrectBody.error) {
+            return res.status(400).send(`Bad Request: ${isCorrectBody.error.details[0].message}`);
         }
 
         const {
@@ -194,6 +232,15 @@ app.post('/customers', async (req, res) => {
             cpf,
             birthday
         } = req.body;
+
+        const isNewCustomer = await connection.query(`
+            SELECT cpf 
+            FROM customers 
+            WHERE cpf = '${cpf}';
+        `);
+        if (isNewCustomer.rows.length !== 0) {
+            return res.status(409).send("This cpf is already registered!");
+        }
 
         await connection.query(`
             INSERT INTO customers (
@@ -202,16 +249,15 @@ app.post('/customers', async (req, res) => {
                 cpf, 
                 birthday
             ) VALUES (
-                '${name}'
-                ,'${phone}'
-                ,'${cpf}',
+                '${name}',
+                '${phone}',
+                '${cpf}',
                 '${birthday}'
             );
         `);
 
         res.sendStatus(201);
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
@@ -219,6 +265,18 @@ app.post('/customers', async (req, res) => {
 app.put('/customers/:id', async (req, res) => {
 
     try {
+        const isCorrectBody = customerSchema.validate(req.body);
+        if (isCorrectBody.error) {
+            return res.status(400).send(`Bad Request: ${isCorrectBody.error.details[0].message}`);
+        }
+
+        const customer = await connection.query(`
+            SELECT * FROM customers
+            WHERE id = '${req.params.id}';
+        `);
+        if (customer.rows.length === 0) {
+            return res.status(404).send("This customer id does not exist!");
+        }
 
         const {
             name,
@@ -226,6 +284,7 @@ app.put('/customers/:id', async (req, res) => {
             cpf,
             birthday
         } = req.body;
+
         await connection.query(`
             UPDATE customers 
             SET name = '${name}', 
@@ -234,13 +293,14 @@ app.put('/customers/:id', async (req, res) => {
                 birthday = '${birthday}' 
             WHERE id = ${req.params.id};
         `);
+        
         res.sendStatus(200);
-
     } catch (err) {
-        console.error(err);
         res.sendStatus(500);
     }
 });
+
+//RENTALS
 
 app.get('/rentals', async (req, res) => {
 
@@ -263,9 +323,8 @@ app.get('/rentals', async (req, res) => {
         ;
         `);
 
-        const newRentals = [];
-        rentals.rows.map(rental => 
-            newRentals.push({
+        const newRentals = rentals.rows.map(rental => {
+            return {
                 id: rental.id,
                 customerId: rental.customerId,
                 gameId: rental.gameId,
@@ -284,8 +343,8 @@ app.get('/rentals', async (req, res) => {
                     categoryId: rental.categoryId,
                     categoryName: rental.categoryName
                 }
-            })    
-        );
+            }  
+        });
 
         if (rentals.rows.length === 0) {
           return res.sendStatus(404);
@@ -375,7 +434,7 @@ app.post('/rentals/:id/return', async (req, res) => {
                 delayFee = '${pricePerDay.rows[0].pricePerDay * (date2.diff(date1, 'day'))}', 
             WHERE id = ${req.params.id};
         `);
-        
+
         res.sendStatus(200);
     } catch (err) {
         res.sendStatus(500);
@@ -395,6 +454,5 @@ app.delete('/rentals/:id', async (req, res) => {
         res.sendStatus(500);
     }
 });
-
 
 app.listen(APP_PORT);
