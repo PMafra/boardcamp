@@ -219,8 +219,8 @@ app.get('/customers/:id', async (req, res) => {
     try {
         const customer = await connection.query(`
             SELECT * FROM customers
-            WHERE id = '${req.params.id}';
-        `);
+            WHERE id = $1;
+        `, [req.params.id]);
         if (customer.rows.length === 0) {
           return res.status(404).send("This customer id does not exist!");
         }
@@ -287,8 +287,8 @@ app.put('/customers/:id', async (req, res) => {
 
         const customer = await connection.query(`
             SELECT * FROM customers
-            WHERE id = '${req.params.id}';
-        `);
+            WHERE id = $1;
+        `, [req.params.id]);
         if (customer.rows.length === 0) {
             return res.status(404).send("This customer id does not exist!");
         }
@@ -306,8 +306,8 @@ app.put('/customers/:id', async (req, res) => {
                 phone = '${phone}', 
                 cpf = '${cpf}', 
                 birthday = '${birthday}' 
-            WHERE id = ${req.params.id};
-        `);
+            WHERE id = $1;
+        `, [req.params.id]);
         
         res.sendStatus(200);
     } catch (err) {
@@ -453,8 +453,8 @@ app.post('/rentals/:id/return', async (req, res) => {
         const isValidRentalId = await connection.query(`
             SELECT id
             FROM rentals
-            WHERE rentals.id = '${req.params.id}';
-        `)
+            WHERE rentals.id = $1;
+        `, [req.params.id])
         if (isValidRentalId.rows.length === 0) {
             return res.status(404).send("Invalid rental id");
         }
@@ -462,8 +462,8 @@ app.post('/rentals/:id/return', async (req, res) => {
         const isRentalAlreadyFinished = await connection.query(`
             SELECT "returnDate"
             FROM rentals
-            WHERE rentals.id = '${req.params.id}';
-        `)
+            WHERE rentals.id = $1;
+        `, [req.params.id])
         if (isRentalAlreadyFinished.rows[0].returnDate) {
             return res.status(400).send("This rental has already been finished");
         }
@@ -473,8 +473,8 @@ app.post('/rentals/:id/return', async (req, res) => {
                 "rentDate",
                 "daysRented"
             FROM rentals
-            WHERE rentals.id = ${req.params.id};
-        `)
+            WHERE rentals.id = $1;
+        `, [req.params.id])
 
         const gameId = rentalsList.rows[0].gameId;
         const rentDate = dayjs(rentalsList.rows[0].rentDate).format('YYYY-MM-DD');
@@ -499,8 +499,8 @@ app.post('/rentals/:id/return', async (req, res) => {
             UPDATE rentals
             SET "returnDate" = '${today}', 
                 "delayFee" = '${pricePerDay * daysOfDelay}'
-            WHERE id = ${req.params.id};
-        `);
+            WHERE id = $1;
+        `, [req.params.id]);
 
         res.sendStatus(200);
     } catch (err) {
@@ -514,8 +514,8 @@ app.delete('/rentals/:id', async (req, res) => {
         const isValidRentalId = await connection.query(`
             SELECT id
             FROM rentals
-            WHERE rentals.id = '${req.params.id}';
-        `)
+            WHERE rentals.id = $1;
+        `, [req.params.id])
         if (isValidRentalId.rows.length === 0) {
             return res.status(404).send("Invalid rental id");
         }
@@ -523,16 +523,16 @@ app.delete('/rentals/:id', async (req, res) => {
         const isRentalAlreadyFinished = await connection.query(`
             SELECT "returnDate"
             FROM rentals
-            WHERE rentals.id = '${req.params.id}';
-        `)
+            WHERE rentals.id = $1;
+        `, [req.params.id])
         if (isRentalAlreadyFinished.rows[0].returnDate) {
             return res.status(400).send("This rental has already been finished");
         }
 
         await connection.query(`
             DELETE FROM rentals
-            WHERE id = ${req.params.id};
-        `);
+            WHERE id = $1;
+        `, [req.params.id]);
 
         res.sendStatus(200);
     } catch (err) {
