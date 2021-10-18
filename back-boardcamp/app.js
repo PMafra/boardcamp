@@ -97,7 +97,7 @@ app.get('/games', async (req, res) => {
     try {
         const games = await connection.query(`
             SELECT games.*, 
-                categories.name AS "categoryName" 
+                categories.name AS "categoryName"
             FROM games 
             JOIN categories 
                 ON games."categoryId" = categories.id
@@ -107,8 +107,21 @@ app.get('/games', async (req, res) => {
         if (games.rows.length === 0) {
           return res.sendStatus(404);
         }
+
+        const rentalsCount = await connection.query(`
+            SELECT "gameId",
+                COUNT(*) AS "rentalsCount" 
+            FROM rentals 
+            GROUP BY "gameId";
+        `)
+
+        games.rows.forEach(game => {
+            game.rentalsCount = rentalsCount.rows.find(elem => elem.gameId === game.id).rentalsCount
+        })
+
         res.send(games.rows);
     } catch (err) {
+        console.log(err)
         res.sendStatus(500);
     }
 });
@@ -180,6 +193,17 @@ app.get('/customers', async (req, res) => {
         if (customers.rows.length === 0) {
           return res.sendStatus(404);
         }
+
+        const rentalsCount = await connection.query(`
+            SELECT "customerId",
+                COUNT(*) AS "rentalsCount" 
+            FROM rentals 
+            GROUP BY "customerId";
+        `)
+
+        customers.rows.forEach(customer => {
+            customer.rentalsCount = rentalsCount.rows.find(elem => elem.customerId === customer.id).rentalsCount
+        })
 
         customers.rows.forEach(customer =>
             customer.birthday = dayjs(customer.birthday).format('YYYY-MM-DD')
