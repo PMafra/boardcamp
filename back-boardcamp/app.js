@@ -46,14 +46,6 @@ const rentalSchema = Joi.object().length(3).keys({
     daysRented: Joi.number().integer().greater(0).required(),
 });
 
-// const messageSchema = Joi.object().keys({
-//     to: Joi.string().alphanum().required(),
-//     text: Joi.string().required(),
-//     type: Joi.valid("message").valid("private_message")
-// });
-
-//CATEGORIES
-
 app.get('/categories', async (req, res) => {
 
     try {
@@ -100,8 +92,6 @@ app.post('/categories', async (req, res) => {
     }
 });
 
-//GAMES
-
 app.get('/games', async (req, res) => {
 
     try {
@@ -111,15 +101,15 @@ app.get('/games', async (req, res) => {
             FROM games 
             JOIN categories 
                 ON games."categoryId" = categories.id
-            ${req.query.name ? 
-                `WHERE games.name iLIKE '${req.query.name}%'` 
-                : ""};
-        `);
+                WHERE games.name iLIKE $1;
+        `, [req.query.name ? `${req.query.name}%` : '%'])
+
         if (games.rows.length === 0) {
           return res.sendStatus(404);
         }
         res.send(games.rows);
     } catch (err) {
+        console.log(err)
         res.sendStatus(500);
     }
 });
@@ -180,17 +170,14 @@ app.post('/games', async (req, res) => {
     }
 });
 
-//CUSTOMERS
-
 app.get('/customers', async (req, res) => {
 
     try {
         const customers = await connection.query(`
             SELECT * FROM customers
-            ${req.query.cpf ? 
-                `WHERE customers.cpf LIKE '${req.query.cpf}%'` 
-                : ""};
-        `);
+                WHERE customers.cpf LIKE $1;
+        `, [req.query.cpf ? `${req.query.cpf}%` : '%']);
+
         if (customers.rows.length === 0) {
           return res.sendStatus(404);
         }
@@ -306,8 +293,6 @@ app.put('/customers/:id', async (req, res) => {
     }
 });
 
-//RENTALS
-
 app.get('/rentals', async (req, res) => {
 
     try {
@@ -324,13 +309,12 @@ app.get('/rentals', async (req, res) => {
                 ON rentals."gameId" = games.id
             JOIN categories
                 ON games."categoryId" = categories.id
-            ${req.query.customerId ? 
-                `WHERE rentals."customerId" = '${req.query.customerId}'` 
-                : ""}
-            ${req.query.gameId ? 
-                `WHERE rentals."gameId" = '${req.query.gameId}'` 
-                : ""};
-        `);
+                WHERE CAST(rentals."customerId" AS varchar) LIKE $1
+                AND CAST(rentals."gameId" AS varchar) LIKE $2
+        `, [
+            req.query.customerId ? `${req.query.customerId}` : '%',
+            req.query.gameId ? `${req.query.gameId}` : '%'
+        ]);
 
         rentals.rows.forEach(rental => {
             rental.rentDate = dayjs(rental.rentDate).format('YYYY-MM-DD');
@@ -357,6 +341,7 @@ app.get('/rentals', async (req, res) => {
 
         res.send(rentals.rows);
     } catch (err) {
+        console.log(err)
         res.sendStatus(500);
     }
 });
@@ -364,7 +349,6 @@ app.get('/rentals', async (req, res) => {
 app.post('/rentals', async (req, res) => {
 
     try {
-
         const isCorrectBody = rentalSchema.validate(req.body);
         if (isCorrectBody.error) {
             return res.status(400).send(`Bad Request: ${isCorrectBody.error.details[0].message}`);
