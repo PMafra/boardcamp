@@ -121,7 +121,6 @@ app.get('/games', async (req, res) => {
 
         res.send(games.rows);
     } catch (err) {
-        console.log(err)
         res.sendStatus(500);
     }
 });
