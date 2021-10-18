@@ -532,21 +532,21 @@ app.get('/rentals/metrics', async (req, res) => {
         if (req.query.startDate && req.query.endDate) {
             finishedRentals = await connection.query(
                 getMetrics + `
-                AND rentals."rentDate" >= CAST('${req.query.startDate}' AS Date)
-                AND rentals."returnDate" <= CAST('${req.query.endDate}' AS Date)
-                ;`      
+                AND rentals."rentDate" >= CAST('$1' AS Date)
+                AND rentals."returnDate" <= CAST('$2' AS Date);
+                `, [req.query.startDate, req.query.endDate]      
             )
         } else if (req.query.startDate) {
             finishedRentals = await connection.query(
                 getMetrics + `
-                AND rentals."rentDate" >= CAST('${req.query.startDate}' AS Date);
-                `      
+                AND rentals."rentDate" >= CAST($1 AS Date);
+                `, [req.query.startDate]      
             )
         } else if (req.query.endDate) {
             finishedRentals = await connection.query(
                 getMetrics + `
-                AND rentals."returnDate" <= CAST('${req.query.endDate}' AS Date);
-                `      
+                AND rentals."returnDate" <= CAST($1 AS Date);
+                `, [req.query.endDate]
             )
         }
         
