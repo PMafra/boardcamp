@@ -101,7 +101,7 @@ app.get('/games', async (req, res) => {
             FROM games 
             JOIN categories 
                 ON games."categoryId" = categories.id
-                WHERE games.name iLIKE $1;
+            WHERE games.name iLIKE $1;
         `, [req.query.name ? `${req.query.name}%` : '%'])
 
         if (games.rows.length === 0) {
@@ -109,7 +109,6 @@ app.get('/games', async (req, res) => {
         }
         res.send(games.rows);
     } catch (err) {
-        console.log(err)
         res.sendStatus(500);
     }
 });
@@ -175,7 +174,7 @@ app.get('/customers', async (req, res) => {
     try {
         const customers = await connection.query(`
             SELECT * FROM customers
-                WHERE customers.cpf LIKE $1;
+            WHERE customers.cpf LIKE $1;
         `, [req.query.cpf ? `${req.query.cpf}%` : '%']);
 
         if (customers.rows.length === 0) {
@@ -309,7 +308,7 @@ app.get('/rentals', async (req, res) => {
                 ON rentals."gameId" = games.id
             JOIN categories
                 ON games."categoryId" = categories.id
-                WHERE CAST(rentals."customerId" AS varchar) LIKE $1
+            WHERE CAST(rentals."customerId" AS varchar) LIKE $1
                 AND CAST(rentals."gameId" AS varchar) LIKE $2
         `, [
             req.query.customerId ? `${req.query.customerId}` : '%',
@@ -341,7 +340,6 @@ app.get('/rentals', async (req, res) => {
 
         res.send(rentals.rows);
     } catch (err) {
-        console.log(err)
         res.sendStatus(500);
     }
 });
@@ -518,5 +516,44 @@ app.delete('/rentals/:id', async (req, res) => {
         res.sendStatus(500);
     }
 });
+
+app.get('/rentals/metrics', async (req, res) => {
+
+    try {
+        const getMetrics = `
+            SELECT SUM("originalPrice") + SUM("delayFee") AS revenue,
+                COUNT(*) AS rentals,
+                (SUM("originalPrice") + SUM("delayFee"))/COUNT(*) AS average
+            FROM rentals 
+            WHERE CAST(rentals."returnDate" AS varchar) <> ''
+        `
+        let finishedRentals;
+
+        if (req.query.startDate && req.query.endDate) {
+            finishedRentals = await connection.query(
+                getMetrics + `
+                AND rentals."rentDate" >= CAST('${req.query.startDate}' AS Date)
+                AND rentals."returnDate" <= CAST('${req.query.endDate}' AS Date)
+                ;`      
+            )
+        } else if (req.query.startDate) {
+            finishedRentals = await connection.query(
+                getMetrics + `
+                AND rentals."rentDate" >= CAST('${req.query.startDate}' AS Date);
+                `      
+            )
+        } else if (req.query.endDate) {
+            finishedRentals = await connection.query(
+                getMetrics + `
+                AND rentals."returnDate" <= CAST('${req.query.endDate}' AS Date);
+                `      
+            )
+        }
+        
+        res.status(200).send(finishedRentals.rows[0]);
+    } catch (err) {
+        res.sendStatus(500);
+    }
+})
 
 app.listen(APP_PORT);
